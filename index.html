@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>图片工坊 v15 // 细节修正版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        matrix: {
+                            bg: '#000000',
+                            card: '#080808',
+                            border: '#1a1a1a',
+                            primary: '#22c55e',
+                            dim: '#15803d',
+                            text: '#4ade80',
+                            muted: '#52525b'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', "Liberation Mono", "Courier New", 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        html, body { height: 100%; overflow: hidden; } 
+        body { background-color: #000000; color: #4ade80; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+        
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-thumb { background: #15803d; }
+        ::-webkit-scrollbar-track { background: #000000; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* 极限压缩对齐核心 */
+        .comparison-slider { position: relative; width: 100%; overflow: hidden; user-select: none; border: 1px solid #15803d; display: inline-block; line-height: 0; }
+        .comparison-slider > img { width: 100%; height: auto; display: block; }
+        .resize-image { position: absolute; top: 0; left: 0; height: 100%; width: 50%; overflow: hidden; border-right: 2px solid #22c55e; z-index: 20; background: #000000; }
+        .resize-image img { width: auto; height: 100%; max-width: none; }
+        .handle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px; background: #000000; border: 2px solid #22c55e; display: flex; align-items: center; justify-content: center; cursor: ew-resize; z-index: 30; box-shadow: 0 0 15px rgba(34, 197, 94, 0.8); border-radius: 50%; }
+
+        input[type="range"] { -webkit-appearance: none; background: transparent; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; background: #000000; border: 2px solid #22c55e; cursor: pointer; margin-top: -5px; }
+        input[type="range"]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: #1a1a1a; border: 1px solid #333; }
+        
+        /* 激活态样式 */
+        .active-glow { 
+            box-shadow: inset 0 0 15px rgba(34, 197, 94, 0.1), 0 0 10px rgba(34, 197, 94, 0.1); 
+            border-color: #22c55e !important; 
+            color: #22c55e !important; 
+            background: #0a0a0a !important;
+        }
+        
+        /* 普通按钮样式 */
+        .nav-btn-base {
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            color: #52525b; /* muted */
+        }
+        .nav-btn-base:hover {
+            border-color: #15803d;
+            color: #4ade80;
+        }
+
+        .ratio-planner { position: relative; width: 100%; padding-top: 100%; background-color: #0a0a0a; border: 1px dashed #52525b; cursor: crosshair; overflow: hidden; margin-top: 5px; touch-action: none; }
+        .drawn-rect { position: absolute; background-color: rgba(34, 197, 94, 0.2); border: 1px solid #22c55e; box-sizing: border-box; display: none; }
+        
+        #imageGallery { display: flex; overflow-x: auto; gap: 5px; padding-bottom: 5px; }
+        .thumbnail { width: 48px; height: 48px; object-fit: cover; border: 1px solid #1a1a1a; cursor: pointer; filter: grayscale(100%); transition: all 0.2s; }
+        .thumbnail:hover { border-color: #22c55e; filter: grayscale(0%); }
+        .thumbnail.selected { border-color: #22c55e; filter: grayscale(0%); box-shadow: 0 0 5px rgba(34,197,94,0.5); }
+    </style>
+</head>
+<body class="flex flex-col lg:flex-row h-full font-mono">
+
+    <!-- 侧边栏 (PC) -->
+    <aside class="hidden lg:flex flex-col w-64 bg-black border-r border-matrix-border h-full shrink-0">
+        <div class="p-6 border-b border-matrix-border">
+            <h1 class="text-xl font-bold text-matrix-primary tracking-tighter flex items-center gap-2">
+                <span class="animate-pulse">>_</span> 图片工坊_V15
+            </h1>
+            <p class="text-[10px] text-matrix-muted mt-2">状态: 体验优化 // ONLINE</p>
+        </div>
+        <nav class="flex-1 overflow-y-auto p-4 space-y-2" id="pc-nav">
+            <button onclick="switchTab('tab-h-stitch', this)" class="nav-btn active-glow w-full text-left px-4 py-3 text-sm border border-transparent transition-all">01. 横向拼图</button>
+            <button onclick="switchTab('tab-split', this)" class="nav-btn nav-btn-base w-full text-left px-4 py-3 text-sm">02. 等分切割</button>
+            <button onclick="switchTab('tab-v-stitch', this)" class="nav-btn nav-btn-base w-full text-left px-4 py-3 text-sm">03. 纵向拼图</button>
+            <button onclick="switchTab('tab-9grid', this)" class="nav-btn nav-btn-base w-full text-left px-4 py-3 text-sm">04. 九宫格</button>
+            <button onclick="switchTab('tab-watermark', this)" class="nav-btn nav-btn-base w-full text-left px-4 py-3 text-sm">05. 全能水印</button>
+            <button onclick="switchTab('tab-frame', this)" class="nav-btn nav-btn-base w-full text-left px-4 py-3 text-sm">06. 画框工坊</button>
+            <button onclick="switchTab('tab-wall', this)" class="nav-btn nav-btn-base w-full text-left px-4 py-3 text-sm">07. 照片墙</button>
+            <div class="h-px bg-matrix-border my-2"></div>
+            <button onclick="switchTab('tab-compress', this)" class="nav-btn nav-btn-base w-full text-left px-4 py-3 text-sm border-matrix-dim/30 text-matrix-primary/70 hover:bg-matrix-primary/10">>> 极限压缩</button>
+        </nav>
+    </aside>
+
+    <!-- 顶部导航 (Mobile) -->
+    <header class="lg:hidden w-full bg-black/90 backdrop-blur z-50 border-b border-matrix-border shrink-0">
+        <div class="px-4 py-3 flex justify-between items-center">
+            <h1 class="text-base font-bold text-matrix-primary flex items-center gap-2"><span class="animate-pulse">></span> 图片工坊_V15</h1>
+        </div>
+        <div class="px-4 pb-3 overflow-x-auto no-scrollbar flex gap-2 snap-x" id="mobile-nav">
+            <button onclick="switchTab('tab-h-stitch', this)" class="mobile-nav-btn active-glow snap-start px-4 py-1.5 text-xs border border-matrix-border bg-black text-matrix-primary">横拼</button>
+            <button onclick="switchTab('tab-split', this)" class="mobile-nav-btn snap-start px-4 py-1.5 text-xs border border-matrix-border text-gray-500 bg-black">切割</button>
+            <button onclick="switchTab('tab-v-stitch', this)" class="mobile-nav-btn snap-start px-4 py-1.5 text-xs border border-matrix-border text-gray-500 bg-black">纵拼</button>
+            <button onclick="switchTab('tab-9grid', this)" class="mobile-nav-btn snap-start px-4 py-1.5 text-xs border border-matrix-border text-gray-500 bg-black">九宫</button>
+            <button onclick="switchTab('tab-watermark', this)" class="mobile-nav-btn snap-start px-4 py-1.5 text-xs border border-matrix-border text-gray-500 bg-black">水印</button>
+            <button onclick="switchTab('tab-frame', this)" class="mobile-nav-btn snap-start px-4 py-1.5 text-xs border border-matrix-border text-gray-500 bg-black">画框</button>
+            <button onclick="switchTab('tab-wall', this)" class="mobile-nav-btn snap-start px-4 py-1.5 text-xs border border-matrix-border text-gray-500 bg-black">墙</button>
+            <button onclick="switchTab('tab-compress', this)" class="mobile-nav-btn snap-start px-4 py-1.5 text-xs border border-matrix-border text-gray-500 bg-black">压缩</button>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="flex-1 overflow-y-auto overflow-x-hidden bg-black p-4 lg:p-6 relative bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9IiMxMTEiLz48L3N2Zz4=')]">
+        <div class="max-w-7xl mx-auto h-full">
+
+            <!-- 1. 横向拼图 -->
+            <div id="tab-h-stitch" class="tab-content fade-in h-full flex flex-col">
+                <div class="flex flex-col lg:flex-row gap-4 h-full">
+                    <div class="lg:w-1/3 flex flex-col gap-4">
+                        <div class="bg-black border border-matrix-border p-4 flex-1 flex flex-col">
+                            <h2 class="text-matrix-primary text-xs font-bold uppercase mb-4 border-l-2 border-matrix-primary pl-2">横向队列</h2>
+                            <div id="h-list" class="flex-1 overflow-y-auto space-y-2 min-h-[100px] mb-4 pr-1"><div class="text-center text-matrix-muted text-xs py-8 border border-dashed border-matrix-border opacity-50">[ 空队列 ]</div></div>
+                            <div class="mb-4 bg-matrix-card p-3 border border-matrix-border">
+                                <div class="flex justify-between mb-2"><label class="text-[10px] text-matrix-muted">间隙 (Gap)</label><span id="h-gap-val" class="text-[10px] text-matrix-primary">0px</span></div>
+                                <input id="h-gap" type="range" min="0" max="100" value="0" class="w-full" oninput="document.getElementById('h-gap-val').textContent = this.value + 'px'">
+                            </div>
+                            <div class="flex gap-2 shrink-0">
+                                <label class="flex-1 border border-matrix-primary/50 text-matrix-primary hover:bg-matrix-primary hover:text-black py-3 text-xs text-center cursor-pointer transition-all flex items-center justify-center gap-1 font-bold">[+] 添加<input type="file" multiple accept="image/*" class="hidden" onchange="addImagesToQueue(this, 'h')"></label>
+                                <button onclick="mergeImages('h')" class="flex-1 bg-matrix-primary text-black hover:bg-white py-3 text-xs font-bold">拼接</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:w-2/3 bg-matrix-card border border-matrix-border p-4 flex flex-col justify-center items-center relative min-h-[300px]">
+                        <div class="absolute top-2 left-2 text-[10px] text-matrix-muted">预览</div>
+                        <div id="h-result-placeholder" class="text-matrix-muted text-xs animate-pulse">等待数据...</div>
+                        <div id="h-result-area" class="hidden w-full h-full flex flex-col items-center">
+                            <div class="flex-1 overflow-auto w-full flex items-center justify-center p-4"><img id="h-final-img" class="max-h-full max-w-full object-contain border border-matrix-dim"></div>
+                            <button onclick="downloadImage('h-final-img', 'h_stitch.png')" class="mt-4 px-6 py-2 border border-matrix-primary text-matrix-primary text-xs hover:bg-matrix-primary hover:text-black">下载</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 切割 (优化：横切竖排) -->
+            <div id="tab-split" class="tab-content hidden fade-in">
+                <div class="grid lg:grid-cols-2 gap-4">
+                    <div class="bg-black border border-matrix-border p-4">
+                        <h2 class="text-matrix-primary text-xs font-bold uppercase mb-6 border-l-2 border-matrix-primary pl-2">切割设置</h2>
+                        <div class="flex flex-col gap-4 mb-6">
+                            <div class="flex border border-matrix-border">
+                                <label class="flex-1 text-center py-2 text-xs cursor-pointer bg-matrix-primary text-black font-bold" id="lbl-split-h"><input type="radio" name="split-dir" value="h" checked class="hidden" onchange="toggleSplitDir('h')"> 横向切 (生成长条)</label>
+                                <label class="flex-1 text-center py-2 text-xs cursor-pointer text-matrix-muted" id="lbl-split-v"><input type="radio" name="split-dir" value="v" class="hidden" onchange="toggleSplitDir('v')"> 纵向切 (生成竖列)</label>
+                            </div>
+                            <div class="flex items-center gap-3 border border-matrix-border p-2">
+                                <span class="text-xs text-matrix-muted">数量:</span>
+                                <input type="number" id="split-count" value="3" min="2" class="flex-1 bg-black text-matrix-primary text-center outline-none border-b border-matrix-dim">
+                            </div>
+                        </div>
+                        <label class="block w-full h-32 border border-dashed border-matrix-muted hover:border-matrix-primary transition-all cursor-pointer flex flex-col items-center justify-center group"><input type="file" accept="image/*" class="hidden" onchange="handleSplitInput(this)"><div class="text-2xl mb-1 text-matrix-muted group-hover:text-matrix-primary">✂</div><div class="text-[10px] text-matrix-muted">导入图片</div></label>
+                    </div>
+                    <div id="split-result-area" class="hidden bg-black border border-matrix-border p-4 flex flex-col h-[400px]">
+                        <div class="flex justify-between items-center mb-4 shrink-0 border-b border-matrix-border pb-2"><span class="text-xs text-matrix-text">预览 (滑动查看)</span><button id="split-dl-btn" class="border border-matrix-primary px-3 py-1 text-matrix-primary text-[10px] hover:bg-matrix-primary hover:text-black">下载 ZIP</button></div>
+                        <!-- 容器 class 将由 JS 动态控制 -->
+                        <div id="split-preview" class="flex gap-2 p-2 bg-matrix-card flex-1"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 3. 纵向拼图 -->
+            <div id="tab-v-stitch" class="tab-content hidden fade-in h-full">
+                <div class="flex flex-col lg:flex-row gap-4 h-full">
+                    <div class="lg:w-1/3 flex flex-col gap-4">
+                        <div class="bg-black border border-matrix-border p-4 flex-1 flex flex-col">
+                            <h2 class="text-matrix-primary text-xs font-bold uppercase mb-4 border-l-2 border-matrix-primary pl-2">纵向队列</h2>
+                            <div id="v-list" class="flex-1 overflow-y-auto space-y-2 min-h-[100px] mb-4 pr-1"><div class="text-center text-matrix-muted text-xs py-8 border border-dashed border-matrix-border opacity-50">[ 空队列 ]</div></div>
+                            <div class="mb-4 bg-matrix-card p-3 border border-matrix-border">
+                                <div class="flex justify-between mb-2"><label class="text-[10px] text-matrix-muted">间隙 (Gap)</label><span id="v-gap-val" class="text-[10px] text-matrix-primary">0px</span></div>
+                                <input id="v-gap" type="range" min="0" max="100" value="0" class="w-full" oninput="document.getElementById('v-gap-val').textContent = this.value + 'px'">
+                            </div>
+                            <div class="flex gap-2 shrink-0">
+                                <label class="flex-1 border border-matrix-primary/50 text-matrix-primary hover:bg-matrix-primary hover:text-black py-3 text-xs text-center cursor-pointer transition-all flex items-center justify-center gap-1 font-bold">[+] 添加<input type="file" multiple accept="image/*" class="hidden" onchange="addImagesToQueue(this, 'v')"></label>
+                                <button onclick="mergeImages('v')" class="flex-1 bg-matrix-primary text-black hover:bg-white py-3 text-xs font-bold">开始拼接</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lg:w-2/3 bg-matrix-card border border-matrix-border p-4 flex flex-col justify-center items-center relative min-h-[300px]">
+                        <div class="absolute top-2 left-2 text-[10px] text-matrix-muted">预览</div>
+                        <div id="v-result-placeholder" class="text-matrix-muted text-xs animate-pulse">等待数据...</div>
+                        <div id="v-result-area" class="hidden w-full h-full flex flex-col items-center">
+                            <div class="flex-1 overflow-auto w-full flex justify-center p-4"><img id="v-final-img" class="max-w-[80%] object-contain border border-matrix-dim"></div>
+                            <button onclick="downloadImage('v-final-img', 'v_stitch.png')" class="mt-4 px-6 py-2 border border-matrix-primary text-matrix-primary text-xs hover:bg-matrix-primary hover:text-black">下载</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 4. 九宫格 -->
+            <div id="tab-9grid" class="tab-content hidden fade-in">
+                <div class="grid lg:grid-cols-2 gap-4">
+                    <div class="bg-black border border-matrix-border p-6 h-fit">
+                        <h2 class="text-matrix-primary text-xs font-bold uppercase mb-6 border-l-2 border-matrix-primary pl-2">九宫格</h2>
+                        <label class="block w-full aspect-square border border-dashed border-matrix-muted hover:border-matrix-primary hover:bg-matrix-card transition-all cursor-pointer flex flex-col items-center justify-center relative group">
+                            <input type="file" accept="image/*" class="hidden" onchange="handle9Grid(this)">
+                            <div id="grid-loading" class="hidden absolute inset-0 bg-black/90 z-10 flex items-center justify-center flex-col"><div class="text-matrix-primary text-xs animate-pulse">处理中...</div></div>
+                            <div class="text-4xl mb-3 text-matrix-muted group-hover:text-matrix-primary">▦</div>
+                            <div class="text-xs text-matrix-muted">点击上传</div>
+                        </label>
+                    </div>
+                    <div id="grid-result-area" class="hidden bg-black border border-matrix-border p-6 h-fit">
+                        <div class="flex justify-between items-center mb-6 border-b border-matrix-border pb-2"><span class="text-xs text-matrix-text">预览</span><button id="grid-dl-btn" class="border border-matrix-primary px-3 py-1 text-matrix-primary text-[10px] hover:bg-matrix-primary hover:text-black">下载 ZIP</button></div>
+                        <div id="grid-preview" class="grid grid-cols-3 gap-1 bg-black p-1 border border-matrix-dim w-full max-w-[300px] mx-auto"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. 水印 -->
+            <div id="tab-watermark" class="tab-content hidden fade-in">
+                <div class="flex flex-col lg:flex-row gap-4">
+                    <div class="lg:w-1/3 bg-black border border-matrix-border p-4">
+                        <h2 class="text-matrix-primary text-xs font-bold uppercase mb-4 border-l-2 border-matrix-primary pl-2">水印设置</h2>
+                        <div class="space-y-4">
+                            <div><label class="text-[10px] text-matrix-muted block mb-1">文本</label><input type="text" id="wm-text" value="@COPYRIGHT" class="w-full bg-matrix-card border border-matrix-border p-2 text-matrix-text text-sm outline-none focus:border-matrix-primary" oninput="updateWatermark()"></div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div><label class="text-[10px] text-matrix-muted block mb-1">颜色</label><input type="color" id="wm-color" value="#ffffff" class="w-full h-8 bg-transparent cursor-pointer" oninput="updateWatermark()"></div>
+                                <div><label class="text-[10px] text-matrix-muted block mb-1">透明度</label><input type="range" id="wm-alpha" min="0.1" max="1" step="0.1" value="0.3" class="w-full" oninput="updateWatermark()"></div>
+                            </div>
+                            <div><label class="text-[10px] text-matrix-muted block mb-1">大小</label><input type="range" id="wm-size" min="12" max="100" value="24" class="w-full" oninput="updateWatermark()"></div>
+                            <div><label class="text-[10px] text-matrix-muted block mb-1">密度</label><input type="range" id="wm-gap" min="50" max="300" value="150" class="w-full" oninput="updateWatermark()"></div>
+                            <div class="flex border border-matrix-border mt-2">
+                                <label class="flex-1 text-center py-2 text-xs font-bold cursor-pointer bg-matrix-primary text-black" id="lbl-wm-tile"><input type="radio" name="wm-mode" value="tile" checked class="hidden" onchange="toggleWmMode('tile')"> 铺满</label>
+                                <label class="flex-1 text-center py-2 text-xs cursor-pointer text-matrix-muted" id="lbl-wm-single"><input type="radio" name="wm-mode" value="single" class="hidden" onchange="toggleWmMode('single')"> 单一</label>
+                            </div>
+                        </div>
+                        <label class="mt-4 block w-full py-3 border border-matrix-primary/50 text-matrix-primary hover:bg-matrix-primary hover:text-black text-center cursor-pointer transition-colors text-xs font-bold">[+] 选择图片<input type="file" accept="image/*" class="hidden" onchange="loadWatermarkImage(this)"></label>
+                    </div>
+                    <div class="lg:w-2/3 bg-matrix-card border border-matrix-border p-4 flex flex-col items-center justify-center min-h-[400px]">
+                        <div id="wm-placeholder" class="text-matrix-muted text-xs">等待图片...</div>
+                        <div id="wm-result-area" class="hidden w-full h-full flex flex-col items-center">
+                            <div class="flex-1 overflow-auto w-full flex items-center justify-center"><img id="wm-preview" class="max-w-full max-h-[60vh] object-contain border border-matrix-dim"></div>
+                            <button onclick="downloadImage('wm-preview', 'watermarked.png')" class="mt-4 px-6 py-2 border border-matrix-primary text-matrix-primary text-xs hover:bg-matrix-primary hover:text-black">保存图片</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 6. 画框工坊 -->
+            <div id="tab-frame" class="tab-content hidden fade-in h-full">
+                <div class="flex flex-col lg:flex-row gap-4 h-full">
+                    <aside class="lg:w-1/3 flex flex-col gap-4 overflow-y-auto pr-1">
+                        <div class="bg-black border border-matrix-border p-4">
+                            <h2 class="text-matrix-primary text-xs font-bold uppercase mb-4 border-l-2 border-matrix-primary pl-2">1. 上传 & 选择</h2>
+                            <label class="flex w-full py-3 border border-matrix-primary/50 text-matrix-primary hover:bg-matrix-primary hover:text-black text-center cursor-pointer transition-all items-center justify-center gap-1 text-xs font-bold mb-2">
+                                [+] 批量上传图片
+                                <input type="file" id="frameImageLoader" accept="image/*" multiple class="hidden">
+                            </label>
+                            <div id="artGallery" class="bg-matrix-card p-2 border border-matrix-border min-h-[60px] flex gap-2 overflow-x-auto"></div>
+                        </div>
+                        
+                        <div id="frameControls" class="bg-black border border-matrix-border p-4 opacity-50 pointer-events-none transition-opacity space-y-4">
+                            <div>
+                                <h3 class="text-[10px] text-matrix-muted uppercase mb-2">2. 比例 & 填充</h3>
+                                <div class="flex gap-2 mb-2">
+                                    <select id="artAspectRatio" class="flex-1 bg-black text-matrix-text border border-matrix-border p-1 text-xs outline-none">
+                                        <option value="original">原始比例</option><option value="1:1">1:1</option><option value="4:5">4:5</option><option value="16:9">16:9</option><option value="custom">绘制自定义...</option>
+                                    </select>
+                                    <div class="flex border border-matrix-border rounded">
+                                        <label class="px-2 py-1 text-[10px] cursor-pointer bg-matrix-primary text-black"><input type="radio" name="fitMode" value="fit" checked class="hidden">适应</label>
+                                        <label class="px-2 py-1 text-[10px] cursor-pointer text-matrix-muted"><input type="radio" name="fitMode" value="fill" class="hidden">填充</label>
+                                    </div>
+                                </div>
+                                <div id="frameRatioPlannerContainer" class="hidden ratio-planner"><div id="frameDrawnRect" class="drawn-rect"></div></div>
+                            </div>
+                            
+                            <div>
+                                <h3 class="text-[10px] text-matrix-muted uppercase mb-2">3. 边框样式</h3>
+                                <div class="grid grid-cols-2 gap-2 mb-2">
+                                    <select id="frameType" class="bg-black text-matrix-text border border-matrix-border p-1 text-xs">
+                                        <option value="solid">纯色</option>
+                                        <option value="gradient">渐变</option>
+                                        <option value="wood">木纹</option>
+                                        <option value="stipple">麻布</option>
+                                    </select>
+                                    <div class="flex gap-1"><input type="color" id="frameColor1" value="#333333" class="h-6 w-full bg-transparent"><input type="color" id="frameColor2" value="#000000" class="h-6 w-full bg-transparent"></div>
+                                </div>
+                                <input type="range" id="frameSize" min="0" max="200" value="30" class="w-full">
+                                <div class="flex justify-between mt-2"><span class="text-[10px] text-matrix-muted">内衬卡纸</span><input type="color" id="matColor" value="#eeeeee" class="h-4 w-4 bg-transparent"></div>
+                                <input type="range" id="matSize" min="0" max="200" value="50" class="w-full">
+                            </div>
+
+                            <div>
+                                <h3 class="text-[10px] text-matrix-muted uppercase mb-2">4. 导出 (单张)</h3>
+                                <button id="frameDownloadBtn" class="w-full py-2 bg-matrix-dim text-white text-xs font-bold hover:bg-matrix-primary hover:text-black">批量导出当前效果 (ZIP)</button>
+                            </div>
+                        </div>
+                    </aside>
+                    <main class="lg:w-2/3 bg-matrix-card border border-matrix-border p-4 flex items-center justify-center relative h-full">
+                        <div id="framePlaceholder" class="text-matrix-muted text-xs animate-pulse">等待图片输入...</div>
+                        <canvas id="framePreviewCanvas" class="max-w-full max-h-full shadow-2xl hidden"></canvas>
+                    </main>
+                </div>
+            </div>
+
+            <!-- 7. 照片墙 -->
+            <div id="tab-wall" class="tab-content hidden fade-in h-full">
+                <div class="flex flex-col lg:flex-row gap-4 h-full">
+                    <aside class="lg:w-1/3 flex flex-col gap-4 overflow-y-auto pr-1">
+                        <div class="bg-black border border-matrix-border p-4">
+                            <h2 class="text-matrix-primary text-xs font-bold uppercase mb-4 border-l-2 border-matrix-primary pl-2">照片墙配置</h2>
+                            <p class="text-[10px] text-matrix-muted mb-2">* 自动混合 画框图片 + 独立图片</p>
+                            
+                            <label class="flex w-full py-3 border border-dashed border-matrix-dim text-matrix-text hover:border-matrix-primary hover:text-matrix-primary text-center cursor-pointer transition-all items-center justify-center gap-1 text-xs font-bold mb-4">
+                                [+] 导入独立图片 (无框)
+                                <input type="file" id="wallImageLoader" accept="image/*" multiple class="hidden">
+                            </label>
+                            
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="text-[10px] text-matrix-muted block mb-1">目标画幅 (绘制以改变布局)</label>
+                                    <div id="wallRatioPlanner" class="ratio-planner"><div id="wallDrawnRect" class="drawn-rect"></div></div>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-matrix-muted block mb-1">智能算法</label>
+                                    <select id="wallLayoutMode" class="w-full bg-black text-matrix-text border border-matrix-border p-2 text-xs outline-none">
+                                        <option value="masonry">智能拟合 (推荐)</option>
+                                        <option value="random">随机散布</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-matrix-muted block mb-1">紧凑度</label>
+                                    <input type="range" id="wallCompactness" min="0" max="100" value="20" class="w-full">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] text-matrix-muted block mb-1">背景色</label>
+                                    <input type="color" id="wallBgColor" value="#111111" class="w-full h-8 bg-transparent cursor-pointer border border-matrix-border">
+                                </div>
+                            </div>
+                        </div>
+                        <button id="wallExportBtn" class="w-full py-3 bg-matrix-primary text-black text-xs font-bold hover:bg-white shadow-[0_0_15px_rgba(34,197,94,0.3)]">导出 PNG</button>
+                    </aside>
+                    <main id="wallCanvasContainer" class="lg:w-2/3 bg-[#111111] border border-matrix-border flex items-center justify-center overflow-auto relative">
+                        <canvas id="wallCanvas" class="shadow-2xl max-w-full max-h-full"></canvas>
+                    </main>
+                </div>
+            </div>
+
+            <!-- 8. 极限压缩 -->
+            <div id="tab-compress" class="tab-content hidden fade-in h-full">
+                <div class="bg-black border border-matrix-border w-full p-6 h-full flex flex-col overflow-y-auto">
+                    <h2 class="text-2xl font-bold text-matrix-primary tracking-widest mb-2 text-center shrink-0">SMART_PRESS // WEBP</h2>
+                    <div class="flex flex-col lg:flex-row gap-6 mt-4 flex-1">
+                        <div class="lg:w-1/4 space-y-4 shrink-0">
+                            <div class="bg-matrix-card p-4 border border-matrix-border space-y-4">
+                                <div><div class="flex justify-between mb-2"><label class="text-[10px] text-matrix-muted">质量</label><span id="comp-qualityValue" class="text-[10px] text-matrix-primary">75%</span></div><input id="comp-qualityRange" type="range" min="1" max="100" value="75" class="w-full"></div>
+                                <div><div class="flex justify-between mb-2"><label class="text-[10px] text-matrix-muted">宽度限制</label><span id="comp-widthValue" class="text-[10px] text-matrix-primary">1920px</span></div><select id="comp-maxWidthSelect" class="w-full bg-black text-matrix-text border border-matrix-border p-2 text-xs outline-none"><option value="0">原始尺寸</option><option value="2560">2K</option><option value="1920" selected>Full HD</option><option value="1280">HD</option></select></div>
+                            </div>
+                            <div id="comp-statsPanel" class="hidden grid grid-cols-3 gap-2 bg-matrix-card p-3 text-center border border-matrix-border">
+                                <div><p class="text-[9px] text-matrix-muted">原始</p><p id="comp-originalSize" class="text-[10px] font-bold text-white">0MB</p></div>
+                                <div><p class="text-[9px] text-matrix-muted">结果</p><p id="comp-compressedSize" class="text-[10px] font-bold text-matrix-primary">0MB</p></div>
+                                <div><p class="text-[9px] text-matrix-muted">比率</p><p id="comp-compressionRatio" class="text-[10px] font-bold text-matrix-text">0%</p></div>
+                            </div>
+                            <button id="comp-downloadBtn" disabled class="w-full py-3 border border-matrix-muted text-matrix-muted text-sm cursor-not-allowed transition-all font-mono">[ 下载图片 ]</button>
+                        </div>
+                        <div class="lg:w-3/4 flex flex-col h-full min-h-[400px]">
+                            <div id="comp-editorArea" class="relative w-full bg-matrix-card border border-dashed border-matrix-border hover:border-matrix-primary transition-colors group flex-1 flex flex-col justify-center items-center overflow-auto p-4">
+                                <div id="comp-placeholderText" onclick="document.getElementById('comp-fileInput').click()" class="text-center group-hover:scale-105 transition-transform cursor-pointer absolute z-40 inset-0 flex flex-col items-center justify-center">
+                                    <div class="text-4xl mb-2 text-matrix-muted group-hover:text-matrix-primary">↯</div>
+                                    <p class="text-matrix-muted text-xs">点击上传图片</p>
+                                </div>
+                                <div id="comp-loadingIndicator" class="hidden flex-col items-center z-50 pointer-events-none absolute inset-0 justify-center bg-black/80"><div class="text-matrix-primary text-xs animate-pulse">正在压缩...</div></div>
+                                <div id="comp-sliderContainer" class="comparison-slider hidden mx-auto shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+                                    <img id="comp-compressedPreview" src="" alt="Compressed">
+                                    <div id="comp-resizeDiv" class="resize-image"><img id="comp-originalPreview" src="" alt="Original"></div>
+                                    <div id="comp-sliderHandle" class="handle"><div class="w-1 h-3 bg-matrix-primary mx-px"></div><div class="w-1 h-3 bg-matrix-primary mx-px"></div></div>
+                                    <span class="absolute top-2 left-2 bg-black text-white text-[9px] px-2 py-1 border border-matrix-border z-30 pointer-events-none">原图</span><span class="absolute top-2 right-2 bg-matrix-dim text-white text-[9px] px-2 py-1 z-30 pointer-events-none">WEBP</span>
+                                </div>
+                                <button onclick="resetCompression()" id="comp-resetBtn" class="hidden absolute bottom-4 left-4 bg-black border border-matrix-primary text-matrix-primary px-3 py-1.5 text-[10px] font-bold z-50 hover:bg-matrix-primary hover:text-black">[ 换一张 ]</button>
+                            </div>
+                            <input id="comp-fileInput" type="file" class="hidden" accept="image/*" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <canvas id="textureCanvas" class="hidden"></canvas>
+    <canvas id="frameRenderCanvas" class="hidden"></canvas>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // 全局变量
+            let hQueue = [], vQueue = []; 
+            let wmImg = null; 
+            let artImageList = []; 
+            let wallRawImages = []; 
+            let currentArtIndex = 0;
+            let texturePatterns = {};
+            let customFrameRatio = 1.0;
+            let wallTargetRatio = 1.0;
+            let isWallRendering = false;
+
+            // DOM
+            const frameControls = document.getElementById('frameControls');
+            const artGallery = document.getElementById('artGallery');
+            const framePreviewCanvas = document.getElementById('framePreviewCanvas');
+            const frameCtx = framePreviewCanvas.getContext('2d');
+            const textureCanvas = document.getElementById('textureCanvas');
+            const textureCtx = textureCanvas.getContext('2d');
+            const wallCanvas = document.getElementById('wallCanvas');
+            const wallCtx = wallCanvas.getContext('2d');
+
+            init();
+
+            function init() {
+                document.getElementById('frameImageLoader').addEventListener('change', handleArtUpload);
+                document.getElementById('wallImageLoader').addEventListener('change', handleWallDirectUpload);
+                ['frameType', 'frameColor1', 'frameColor2', 'frameSize', 'matColor', 'matSize'].forEach(id => document.getElementById(id).addEventListener('input', scheduleRedrawArt));
+                document.getElementById('artAspectRatio').addEventListener('change', (e) => {
+                    document.getElementById('frameRatioPlannerContainer').classList.toggle('hidden', e.target.value !== 'custom');
+                    scheduleRedrawArt();
+                });
+                document.getElementsByName('fitMode').forEach(r => r.addEventListener('change', scheduleRedrawArt));
+                document.getElementById('frameDownloadBtn').addEventListener('click', batchExportFrames);
+                document.getElementById('wallLayoutMode').addEventListener('change', renderWall);
+                document.getElementById('wallCompactness').addEventListener('input', renderWall);
+                document.getElementById('wallBgColor').addEventListener('input', (e) => document.getElementById('wallCanvasContainer').style.backgroundColor = e.target.value);
+                document.getElementById('wallExportBtn').addEventListener('click', exportWall);
+                
+                setupRatioPlanner(document.getElementById('frameRatioPlannerContainer'), document.getElementById('frameDrawnRect'), (r) => { customFrameRatio = r; scheduleRedrawArt(); });
+                setupRatioPlanner(document.getElementById('wallRatioPlanner'), document.getElementById('wallDrawnRect'), (r) => { wallTargetRatio = r; renderWall(); });
+
+                updatePatterns();
+                initCompression();
+            }
+
+            // --- 核心修复：按钮状态清除 ---
+            window.switchTab = function(targetId, btn) {
+                document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+                document.getElementById(targetId).classList.remove('hidden');
+                
+                // 清除所有按钮的激活状态 (包括PC和Mobile)
+                const resetBtn = (b) => {
+                    b.classList.remove('active-glow', 'border-matrix-primary', 'bg-black', 'text-matrix-primary', 'text-gray-500', 'border-transparent', 'border-matrix-border');
+                    b.classList.add('text-gray-500', 'border-transparent'); // 默认基础样式
+                    if(b.classList.contains('nav-btn')) { // PC
+                        b.classList.add('nav-btn', 'w-full', 'text-left', 'px-4', 'py-3', 'text-sm', 'border', 'transition-all', 'hover:border-matrix-dim', 'hover:text-matrix-primary');
+                        if(b.textContent.includes("压缩")) b.classList.add('border-matrix-dim/30', 'text-matrix-primary/70');
+                    } else { // Mobile
+                        b.classList.add('mobile-nav-btn', 'snap-start', 'px-4', 'py-1.5', 'text-xs', 'border', 'border-matrix-border', 'bg-black');
+                    }
+                };
+
+                document.querySelectorAll('#pc-nav button').forEach(resetBtn);
+                document.querySelectorAll('#mobile-nav button').forEach(resetBtn);
+
+                // 设置当前激活状态
+                if (window.innerWidth >= 1024) {
+                    btn.className = "nav-btn active-glow w-full text-left px-4 py-3 border border-transparent transition-all text-sm";
+                } else {
+                    btn.className = "mobile-nav-btn active-glow snap-start px-4 py-1.5 text-xs border border-matrix-border bg-black text-matrix-primary";
+                    btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                }
+                
+                if(targetId === 'tab-wall' && (artImageList.length > 0 || wallRawImages.length > 0)) setTimeout(renderWall, 100);
+            }
+
+            // --- 核心修复：切割预览方向 ---
+            window.toggleSplitDir = function(v) {
+                document.getElementById('lbl-split-h').className = v==='h'?"flex-1 text-center py-2 text-xs cursor-pointer bg-matrix-primary text-black font-bold transition-all":"flex-1 text-center py-2 text-xs cursor-pointer text-matrix-muted transition-all";
+                document.getElementById('lbl-split-v').className = v==='v'?"flex-1 text-center py-2 text-xs cursor-pointer bg-matrix-primary text-black font-bold transition-all":"flex-1 text-center py-2 text-xs cursor-pointer text-matrix-muted transition-all";
+                const i = document.querySelector('#tab-split input[type="file"]'); 
+                if(i.files.length) handleSplitInput(i);
+            }
+
+            window.handleSplitInput = async function(input) {
+                if(!input.files[0]) return;
+                const img = await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=URL.createObjectURL(input.files[0])});
+                const count = parseInt(document.getElementById('split-count').value)||3;
+                const dir = document.querySelector('input[name="split-dir"]:checked').value;
+                const zip = new JSZip(); const folder = zip.folder("split");
+                const prev = document.getElementById('split-preview'); 
+                
+                prev.innerHTML='';
+                
+                // 布局方向调整：横切变纵排
+                if (dir === 'h') {
+                    prev.className = "flex flex-col gap-2 p-4 bg-matrix-card overflow-y-auto h-full items-center w-full";
+                } else {
+                    prev.className = "flex flex-row gap-2 p-4 bg-matrix-card overflow-x-auto h-full items-center w-full";
+                }
+
+                const w = dir==='h'?img.width:img.width/count;
+                const h = dir==='h'?img.height/count:img.height;
+                
+                for(let i=0;i<count;i++) {
+                    const c = document.createElement('canvas'); c.width=w; c.height=h;
+                    c.getContext('2d').drawImage(img, dir==='h'?0:i*w, dir==='h'?i*h:0, w, h, 0, 0, w, h);
+                    const d = c.toDataURL('image/jpeg');
+                    folder.file(`${i+1}.jpg`, d.split(',')[1], {base64:true});
+                    const pi = document.createElement('img'); pi.src=d;
+                    // 样式微调，去除高度限制，改为宽度自适应
+                    pi.className = "border border-matrix-dim object-contain block bg-black";
+                    if(dir==='h') {
+                        pi.style.width = "100%";
+                        pi.style.maxWidth = "400px"; // 限制最大宽度防止过大
+                    } else {
+                        pi.style.height = "100%";
+                    }
+                    prev.appendChild(pi);
+                }
+                document.getElementById('split-result-area').classList.remove('hidden');
+                document.getElementById('split-dl-btn').onclick = async () => saveAs(await zip.generateAsync({type:"blob"}), "split.zip");
+            }
+
+            // --- 其他通用逻辑 (保持 V14) ---
+            function setupRatioPlanner(container, rect, cb) {
+                let drawing = false; let startX, startY;
+                const getXY = (e) => {
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    const r = container.getBoundingClientRect();
+                    return { x: clientX - r.left, y: clientY - r.top };
+                };
+                const start = (e) => { drawing = true; const pos = getXY(e); startX = pos.x; startY = pos.y; rect.style.display = 'block'; rect.style.width = '0px'; rect.style.height = '0px'; };
+                const move = (e) => {
+                    if(!drawing) return; e.preventDefault(); const pos = getXY(e);
+                    const w = Math.abs(pos.x - startX); const h = Math.abs(pos.y - startY);
+                    rect.style.left = Math.min(pos.x, startX) + 'px'; rect.style.top = Math.min(pos.y, startY) + 'px'; rect.style.width = w + 'px'; rect.style.height = h + 'px';
+                };
+                const end = (e) => { if(!drawing) return; drawing = false; const w = parseFloat(rect.style.width); const h = parseFloat(rect.style.height); if(w > 5 && h > 5) cb(w/h); };
+                container.addEventListener('mousedown', start); container.addEventListener('mousemove', move); container.addEventListener('mouseup', end); container.addEventListener('mouseleave', end);
+                container.addEventListener('touchstart', start, {passive: false}); container.addEventListener('touchmove', move, {passive: false}); container.addEventListener('touchend', end);
+            }
+
+            function findBestMasonryLayout(canvases, baseSize, gap, targetRatio) {
+                let bestMatch = { diff: Infinity, layout: [], totalWidth: 0, totalHeight: 0 };
+                const maxChecks = Math.max(2, Math.min(8, canvases.length));
+                for (let cols = 2; cols <= maxChecks; cols++) {
+                    const result = calculateMasonryLayout('vertical', canvases, cols, baseSize, gap);
+                    if (result.totalHeight === 0) continue;
+                    const actualRatio = result.totalWidth / result.totalHeight;
+                    const diff = Math.abs(actualRatio - targetRatio);
+                    if (diff < bestMatch.diff) { bestMatch = { ...result, diff }; }
+                }
+                for (let rows = 2; rows <= maxChecks; rows++) {
+                    const result = calculateMasonryLayout('horizontal', canvases, rows, baseSize, gap);
+                    if (result.totalWidth === 0) continue;
+                    const actualRatio = result.totalWidth / result.totalHeight;
+                    const diff = Math.abs(actualRatio - targetRatio);
+                    if (diff < bestMatch.diff) { bestMatch = { ...result, diff }; }
+                }
+                return bestMatch;
+            }
+
+            function calculateMasonryLayout(direction, canvases, fixedCount, baseSize, gap) {
+                let layout = [];
+                if (direction === 'vertical') {
+                    let columnHeights = new Array(fixedCount).fill(0);
+                    canvases.forEach(canvas => {
+                        const minHeight = Math.min(...columnHeights);
+                        const colIndex = columnHeights.indexOf(minHeight);
+                        const scale = baseSize / canvas.width;
+                        const itemHeight = canvas.height * scale;
+                        const itemWidth = baseSize;
+                        const x = colIndex * (baseSize + gap);
+                        const y = minHeight;
+                        layout.push({ canvas: canvas, x, y, width: itemWidth, height: itemHeight });
+                        columnHeights[colIndex] += itemHeight + gap;
+                    });
+                    const totalWidth = fixedCount * baseSize + (fixedCount - 1) * gap;
+                    const totalHeight = Math.max(...columnHeights) - gap;
+                    return { layout, totalWidth, totalHeight };
+                } else {
+                    let rowWidths = new Array(fixedCount).fill(0);
+                    canvases.forEach(canvas => {
+                        const minWidth = Math.min(...rowWidths);
+                        const rowIndex = rowWidths.indexOf(minWidth);
+                        const scale = baseSize / canvas.height;
+                        const itemWidth = canvas.width * scale;
+                        const itemHeight = baseSize;
+                        const x = minWidth;
+                        const y = rowIndex * (baseSize + gap);
+                        layout.push({ canvas: canvas, x, y, width: itemWidth, height: itemHeight });
+                        rowWidths[rowIndex] += itemWidth + gap;
+                    });
+                    const totalWidth = Math.max(...rowWidths) - gap;
+                    const totalHeight = fixedCount * baseSize + (fixedCount - 1) * gap;
+                    return { layout, totalWidth, totalHeight };
+                }
+            }
+
+            async function renderWall() {
+                if((!artImageList.length && !wallRawImages.length) || isWallRendering) return;
+                isWallRendering = true;
+                document.getElementById('wallExportBtn').innerText = "渲染中...";
+                const settings = getFrameSettings();
+                const layoutMode = document.getElementById('wallLayoutMode').value;
+                const compactness = parseInt(document.getElementById('wallCompactness').value);
+                
+                const framedItems = await Promise.all(artImageList.map(img => {
+                    const c = document.createElement('canvas');
+                    const w = 400; const h = w / (settings.ratio === 1 ? img.width/img.height : settings.ratio);
+                    c.width = w; c.height = h;
+                    renderSingleFrame(c.getContext('2d'), img, settings, w, h);
+                    return c;
+                }));
+                const rawItems = wallRawImages.map(img => {
+                    const c = document.createElement('canvas');
+                    const w = 400; const h = w / (img.width / img.height);
+                    c.width = w; c.height = h;
+                    c.getContext('2d').drawImage(img, 0, 0, w, h);
+                    return c;
+                });
+                const items = [...framedItems, ...rawItems];
+                let layout = [], totalW, totalH;
+                if(layoutMode === 'masonry') {
+                    const gap = compactness / 2;
+                    const baseSize = 300;
+                    const result = findBestMasonryLayout(items, baseSize, gap, wallTargetRatio);
+                    layout = result.layout;
+                    totalW = result.totalWidth; totalH = result.totalHeight;
+                } else {
+                    totalW = 2000; totalH = 2000 / wallTargetRatio;
+                    layout = items.map(item => ({
+                        canvas: item,
+                        x: Math.random() * (totalW - 200), y: Math.random() * (totalH - 200),
+                        width: 200 + Math.random()*100, height: (200 + Math.random()*100) / (item.width/item.height),
+                        rot: (Math.random()-0.5) * 0.5
+                    }));
+                }
+                wallCanvas.width = totalW; wallCanvas.height = totalH;
+                wallCtx.clearRect(0,0,totalW,totalH);
+                layout.forEach(l => {
+                    wallCtx.save();
+                    if(l.rot) { wallCtx.translate(l.x + l.width/2, l.y + l.height/2); wallCtx.rotate(l.rot); wallCtx.drawImage(l.canvas, -l.width/2, -l.height/2, l.width, l.height); } 
+                    else { wallCtx.drawImage(l.canvas, l.x, l.y, l.width, l.height); }
+                    wallCtx.shadowColor = "rgba(0,0,0,0.5)"; wallCtx.shadowBlur = 20;
+                    wallCtx.restore();
+                });
+                isWallRendering = false;
+                document.getElementById('wallExportBtn').innerText = "导出 PNG";
+            }
+
+            // ... 其他函数 (upload, frame render, etc.) 保持原样 ...
+            async function handleArtUpload(e) { const files = e.target.files; if(!files.length) return; const newImages = await loadFiles(files); artImageList = [...artImageList, ...newImages]; updateArtGallery(); if(artImageList.length > 0) { currentArtIndex = artImageList.length - newImages.length; setPreviewArt(currentArtIndex); document.getElementById('frameControls').classList.remove('opacity-50', 'pointer-events-none'); document.getElementById('framePlaceholder').classList.add('hidden'); framePreviewCanvas.classList.remove('hidden'); } }
+            async function handleWallDirectUpload(e) { const files = e.target.files; if(!files.length) return; const newImages = await loadFiles(files); wallRawImages = [...wallRawImages, ...newImages]; renderWall(); }
+            async function loadFiles(files) { return Promise.all(Array.from(files).map(file => new Promise((resolve) => { const reader = new FileReader(); reader.onload = (ev) => { const img = new Image(); img.onload = () => { img.originalName = file.name; resolve(img); }; img.src = ev.target.result; }; reader.readAsDataURL(file); }))); }
+            function updateArtGallery() { artGallery.innerHTML = ''; artImageList.forEach((img, idx) => { const thumb = document.createElement('img'); thumb.src = img.src; thumb.className = `thumbnail ${idx === currentArtIndex ? 'selected' : ''}`; thumb.onclick = () => setPreviewArt(idx); artGallery.appendChild(thumb); }); }
+            function setPreviewArt(index) { currentArtIndex = index; updateArtGallery(); scheduleRedrawArt(); }
+            function scheduleRedrawArt() { requestAnimationFrame(redrawFramePreview); }
+            function getFrameSettings() { const ratioVal = document.getElementById('artAspectRatio').value; let targetRatio = 1; if(ratioVal === 'original' && artImageList[currentArtIndex]) targetRatio = artImageList[currentArtIndex].width / artImageList[currentArtIndex].height; else if(ratioVal === 'custom') targetRatio = customFrameRatio; else if(ratioVal.includes(':')) { const [w,h] = ratioVal.split(':').map(Number); targetRatio = w/h; } return { ratio: targetRatio, fit: document.querySelector('input[name="fitMode"]:checked').value, type: document.getElementById('frameType').value, c1: document.getElementById('frameColor1').value, c2: document.getElementById('frameColor2').value, size: parseInt(document.getElementById('frameSize').value), matC: document.getElementById('matColor').value, matS: parseInt(document.getElementById('matSize').value) }; }
+            function redrawFramePreview() { if(!artImageList[currentArtIndex]) return; updatePatterns(); const settings = getFrameSettings(); const img = artImageList[currentArtIndex]; const container = framePreviewCanvas.parentElement; let cw = container.clientWidth - 32; let ch = container.clientHeight - 32; if (cw / ch > settings.ratio) cw = ch * settings.ratio; else ch = cw / settings.ratio; framePreviewCanvas.width = cw; framePreviewCanvas.height = ch; renderSingleFrame(frameCtx, img, settings, cw, ch); }
+            function renderSingleFrame(ctx, img, s, w, h) { ctx.fillStyle = s.matC; ctx.fillRect(0, 0, w, h); const fs = s.size * (w / 1000); ctx.lineWidth = fs; let style = s.c1; if(s.type === 'wood') style = texturePatterns.wood; else if(s.type === 'stipple') style = texturePatterns.stipple; else if(s.type === 'gradient') { const grad = ctx.createLinearGradient(0, 0, w, h); grad.addColorStop(0, s.c1); grad.addColorStop(1, s.c2); style = grad; } ctx.strokeStyle = style; ctx.strokeRect(fs/2, fs/2, w-fs, h-fs); const innerX = fs + (s.matS * (w/1000)); const innerY = fs + (s.matS * (w/1000)); const innerW = w - innerX*2; const innerH = h - innerY*2; if(innerW > 0 && innerH > 0) { ctx.save(); ctx.beginPath(); ctx.rect(innerX, innerY, innerW, innerH); ctx.clip(); const imgRatio = img.width / img.height; const areaRatio = innerW / innerH; let drawW, drawH, dx, dy; if(s.fit === 'fit') { if(imgRatio > areaRatio) { drawW = innerW; drawH = innerW / imgRatio; dx = innerX; dy = innerY + (innerH - drawH)/2; } else { drawH = innerH; drawW = innerH * imgRatio; dy = innerY; dx = innerX + (innerW - drawW)/2; } } else { if(imgRatio > areaRatio) { drawH = innerH; drawW = innerH * imgRatio; dy = innerY; dx = innerX + (innerW - drawW)/2; } else { drawW = innerW; drawH = innerW / imgRatio; dx = innerX; dy = innerY + (innerH - drawH)/2; } } ctx.drawImage(img, dx, dy, drawW, drawH); ctx.restore(); } }
+            async function batchExportFrames() { if(!artImageList.length) return alert("无图片"); const zip = new JSZip(); const settings = getFrameSettings(); const exportCanvas = document.createElement('canvas'); const ctx = exportCanvas.getContext('2d'); const baseW = 1500; const baseH = baseW / settings.ratio; exportCanvas.width = baseW; exportCanvas.height = baseH; for(let i=0; i<artImageList.length; i++) { renderSingleFrame(ctx, artImageList[i], settings, baseW, baseH); const data = exportCanvas.toDataURL('image/jpeg', 0.9); zip.file(`frame_${i+1}.jpg`, data.split(',')[1], {base64:true}); } saveAs(await zip.generateAsync({type:"blob"}), "frames.zip"); }
+            function exportWall() { if(!artImageList.length && !wallRawImages.length) return alert("无内容"); wallCanvas.toBlob(blob => saveAs(blob, "photowall.png")); }
+            function updatePatterns() { const c1 = document.getElementById('frameColor1').value; const c2 = document.getElementById('frameColor2').value; textureCanvas.width = 100; textureCanvas.height = 100; textureCtx.fillStyle = c1; textureCtx.fillRect(0,0,100,100); textureCtx.strokeStyle = c2; for(let i=0;i<20;i++) { textureCtx.beginPath(); textureCtx.moveTo(Math.random()*100,0); textureCtx.bezierCurveTo(Math.random()*100, 50, Math.random()*100, 50, Math.random()*100, 100); textureCtx.stroke(); } texturePatterns.wood = frameCtx.createPattern(textureCanvas, 'repeat'); textureCtx.fillStyle = c1; textureCtx.fillRect(0,0,100,100); textureCtx.fillStyle = c2; for(let i=0;i<200;i++) { textureCtx.globalAlpha = Math.random()*0.5; textureCtx.beginPath(); textureCtx.arc(Math.random()*100, Math.random()*100, 1, 0, Math.PI*2); textureCtx.fill(); } textureCtx.globalAlpha = 1; texturePatterns.stipple = frameCtx.createPattern(textureCanvas, 'repeat'); }
+            
+            function initCompression() {
+                const fileInput = document.getElementById('comp-fileInput');
+                const qualityRange = document.getElementById('comp-qualityRange');
+                const maxWidthSelect = document.getElementById('comp-maxWidthSelect');
+                const downloadBtn = document.getElementById('comp-downloadBtn');
+                const sliderContainer = document.getElementById('comp-sliderContainer');
+                const resizeDiv = document.getElementById('comp-resizeDiv');
+                const sliderHandle = document.getElementById('comp-sliderHandle');
+                let originalImage = null, originalFile = null, compressedBlob = null, isProcessing = false;
+
+                fileInput.addEventListener('change', (e) => {
+                    if(e.target.files && e.target.files[0]) {
+                        originalFile = e.target.files[0];
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                            originalImage = new Image();
+                            originalImage.onload = () => {
+                                document.getElementById('comp-placeholderText').classList.add('hidden');
+                                sliderContainer.classList.remove('hidden');
+                                document.getElementById('comp-statsPanel').classList.remove('hidden');
+                                document.getElementById('comp-resetBtn').classList.remove('hidden');
+                                document.getElementById('comp-editorArea').classList.remove('border-dashed');
+                                document.getElementById('comp-originalPreview').src = ev.target.result;
+                                triggerCompression();
+                            }
+                            originalImage.src = ev.target.result;
+                        };
+                        reader.readAsDataURL(originalFile);
+                    }
+                });
+
+                qualityRange.addEventListener('input', (e) => document.getElementById('comp-qualityValue').textContent = e.target.value + '%');
+                qualityRange.addEventListener('change', triggerCompression);
+                maxWidthSelect.addEventListener('change', triggerCompression);
+
+                function triggerCompression() {
+                    if (!originalImage || isProcessing) return;
+                    isProcessing = true;
+                    document.getElementById('comp-loadingIndicator').classList.remove('hidden');
+                    document.getElementById('comp-loadingIndicator').classList.add('flex');
+                    setTimeout(() => {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        let w = originalImage.width, h = originalImage.height;
+                        const maxW = parseInt(maxWidthSelect.value);
+                        if(maxW > 0 && w > maxW) { const r = maxW / w; w = maxW; h = h * r; }
+                        canvas.width = w; canvas.height = h;
+                        ctx.drawImage(originalImage, 0, 0, w, h);
+                        const q = parseInt(qualityRange.value) / 100;
+                        const dataUrl = canvas.toDataURL('image/webp', q);
+                        document.getElementById('comp-compressedPreview').src = dataUrl;
+                        const compSize = Math.round((dataUrl.length - 22) * 3 / 4);
+                        const origSize = originalFile.size;
+                        document.getElementById('comp-originalSize').textContent = formatBytes(origSize);
+                        document.getElementById('comp-compressedSize').textContent = formatBytes(compSize);
+                        const ratio = ((origSize - compSize) / origSize * 100).toFixed(1);
+                        document.getElementById('comp-compressionRatio').textContent = ratio > 0 ? "-" + ratio + "%" : "变大";
+                        fetch(dataUrl).then(r=>r.blob()).then(b=>{
+                            compressedBlob = b;
+                            downloadBtn.disabled = false;
+                            downloadBtn.className = "w-full py-3 bg-matrix-primary text-black font-bold text-sm shadow-[0_0_15px_rgba(34,197,94,0.4)] hover:bg-white transition-all font-mono";
+                        });
+                        isProcessing = false;
+                        document.getElementById('comp-loadingIndicator').classList.add('hidden');
+                        document.getElementById('comp-loadingIndicator').classList.remove('flex');
+                    }, 50);
+                }
+                downloadBtn.onclick = () => { if(compressedBlob) saveAs(compressedBlob, originalFile.name.split('.')[0] + "_smartPress.webp"); };
+                
+                let isDragging = false;
+                const dragStart = () => isDragging = true;
+                const dragEnd = () => isDragging = false;
+                const dragMove = (e) => {
+                    if (!isDragging) return;
+                    const rect = sliderContainer.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    let x = clientX - rect.left;
+                    if(x < 0) x = 0; if(x > rect.width) x = rect.width;
+                    const per = (x / rect.width) * 100;
+                    resizeDiv.style.width = per + "%";
+                    sliderHandle.style.left = per + "%";
+                };
+                sliderContainer.addEventListener('mousedown', dragStart); sliderContainer.addEventListener('touchstart', dragStart);
+                window.addEventListener('mouseup', dragEnd); window.addEventListener('touchend', dragEnd);
+                window.addEventListener('mousemove', dragMove); window.addEventListener('touchmove', dragMove);
+            }
+            window.resetCompression = function() {
+                document.getElementById('comp-fileInput').value = '';
+                document.getElementById('comp-placeholderText').classList.remove('hidden');
+                document.getElementById('comp-sliderContainer').classList.add('hidden');
+                document.getElementById('comp-statsPanel').classList.add('hidden');
+                document.getElementById('comp-resetBtn').classList.add('hidden');
+                document.getElementById('comp-editorArea').classList.add('border-dashed');
+                const btn = document.getElementById('comp-downloadBtn');
+                btn.disabled = true;
+                btn.className = "w-full py-3 border border-matrix-muted text-matrix-muted text-sm cursor-not-allowed transition-all font-mono";
+            }
+
+            // 1-5 外部函数
+            window.addImagesToQueue = async function(input, type) {
+                const files = input.files; if(!files.length) return;
+                const q = type === 'h' ? hQueue : vQueue;
+                for(let f of files) { const img = await new Promise(r => { const i=new Image(); i.onload=()=>r(i); i.src=URL.createObjectURL(f); }); img.file = f; q.push({img, file:f}); }
+                input.value = ''; renderQueue(type);
+            }
+            window.renderQueue = function(type) {
+                const q = type === 'h' ? hQueue : vQueue;
+                const list = document.getElementById(type==='h'?'h-list':'v-list');
+                if(!q.length) return list.innerHTML = '<div class="text-center text-matrix-muted text-xs py-8 border border-dashed border-matrix-border opacity-50">[ 空队列 ]</div>';
+                list.innerHTML = '';
+                q.forEach((item, i) => {
+                    const d = document.createElement('div'); d.className = "bg-black p-2 border border-matrix-border flex items-center justify-between mb-1";
+                    d.innerHTML = `<div class="flex gap-2 items-center"><img src="${item.img.src}" class="w-6 h-6 object-cover border border-matrix-dim"><span class="text-[10px] truncate w-20">${item.file.name}</span></div><button onclick="removeFromQueue('${type}',${i})" class="text-red-500 text-[10px]">×</button>`;
+                    list.appendChild(d);
+                });
+            }
+            window.removeFromQueue = function(type, idx) { (type==='h'?hQueue:vQueue).splice(idx, 1); renderQueue(type); }
+            window.mergeImages = function(type) {
+                const q = type === 'h' ? hQueue : vQueue; if(!q.length) return;
+                const gap = parseInt(document.getElementById(type==='h'?'h-gap':'v-gap').value)||0;
+                const cvs = document.createElement('canvas'); const ctx = cvs.getContext('2d');
+                if(type === 'h') {
+                    const h = Math.max(...q.map(i=>i.img.height));
+                    let w = 0; q.forEach(i => w += (i.img.width * (h/i.img.height)) + gap); w -= gap;
+                    cvs.width = w; cvs.height = h;
+                    let x = 0; q.forEach(i => { const iw = i.img.width*(h/i.img.height); ctx.drawImage(i.img, x, 0, iw, h); x+=iw+gap; });
+                } else {
+                    const w = Math.max(...q.map(i=>i.img.width));
+                    let h = 0; q.forEach(i => h += (i.img.height * (w/i.img.width)) + gap); h -= gap;
+                    cvs.width = w; cvs.height = h;
+                    let y = 0; q.forEach(i => { const ih = i.img.height*(w/i.img.width); ctx.drawImage(i.img, 0, y, w, ih); y+=ih+gap; });
+                }
+                const res = document.getElementById(type==='h'?'h-final-img':'v-final-img');
+                res.src = cvs.toDataURL();
+                document.getElementById(type==='h'?'h-result-area':'v-result-area').classList.remove('hidden');
+                document.getElementById(type==='h'?'h-result-placeholder':'v-result-placeholder').classList.add('hidden');
+            }
+            window.handle9Grid = async function(input) {
+                if(!input.files[0]) return;
+                const img = await new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src=URL.createObjectURL(input.files[0])});
+                const size = Math.min(img.width, img.height);
+                const sx = (img.width-size)/2, sy = (img.height-size)/2;
+                const cell = size/3;
+                const zip = new JSZip(); const folder = zip.folder("9grid");
+                const prev = document.getElementById('grid-preview'); prev.innerHTML='';
+                for(let r=0;r<3;r++) for(let c=0;c<3;c++) {
+                    const cvs = document.createElement('canvas'); cvs.width=cell; cvs.height=cell;
+                    cvs.getContext('2d').drawImage(img, sx+c*cell, sy+r*cell, cell, cell, 0,0, cell, cell);
+                    const d = cvs.toDataURL('image/jpeg');
+                    folder.file(`${r*3+c+1}.jpg`, d.split(',')[1], {base64:true});
+                    const pi = document.createElement('img'); pi.src=d; pi.className="w-full block"; prev.appendChild(pi);
+                }
+                document.getElementById('grid-result-area').classList.remove('hidden');
+                document.getElementById('grid-dl-btn').onclick = async () => saveAs(await zip.generateAsync({type:"blob"}), "9grid.zip");
+            }
+            window.toggleWmMode = function(m) {
+                document.getElementById('lbl-wm-tile').className = m==='tile'?"flex-1 text-center py-2 text-xs font-bold cursor-pointer bg-matrix-primary text-black":"flex-1 text-center py-2 text-xs cursor-pointer text-matrix-muted";
+                document.getElementById('lbl-wm-single').className = m==='single'?"flex-1 text-center py-2 text-xs font-bold cursor-pointer bg-matrix-primary text-black":"flex-1 text-center py-2 text-xs cursor-pointer text-matrix-muted";
+                updateWatermark();
+            }
+            window.loadWatermarkImage = async function(input) {
+                if(!input.files[0]) return;
+                wmImg = await new Promise(r=>{const i=new Image(); i.onload=()=>r(i); i.src=URL.createObjectURL(input.files[0]);});
+                document.getElementById('wm-placeholder').classList.add('hidden');
+                document.getElementById('wm-result-area').classList.remove('hidden');
+                updateWatermark();
+            }
+            window.updateWatermark = function() {
+                if(!wmImg) return;
+                const txt = document.getElementById('wm-text').value;
+                const col = document.getElementById('wm-color').value;
+                const alf = document.getElementById('wm-alpha').value;
+                const siz = document.getElementById('wm-size').value;
+                const gap = document.getElementById('wm-gap').value;
+                const mod = document.querySelector('input[name="wm-mode"]:checked').value;
+                const cvs = document.createElement('canvas'); cvs.width=wmImg.width; cvs.height=wmImg.height;
+                const ctx = cvs.getContext('2d');
+                ctx.drawImage(wmImg,0,0);
+                const fs = Math.max(wmImg.width, wmImg.height) * (siz/800);
+                ctx.font = `bold ${fs}px monospace`;
+                ctx.fillStyle = col; ctx.globalAlpha = alf; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                if(mod === 'single') { ctx.fillText(txt, wmImg.width - fs - ctx.measureText(txt).width/2, wmImg.height - fs); }
+                else {
+                    const step = fs * (gap/20);
+                    ctx.translate(wmImg.width/2, wmImg.height/2); ctx.rotate(-45*Math.PI/180); ctx.translate(-wmImg.width/2, -wmImg.height/2);
+                    const d = Math.sqrt(wmImg.width**2 + wmImg.height**2);
+                    for(let y=-d; y<d; y+=step) for(let x=-d; x<d; x+=ctx.measureText(txt).width+step) ctx.fillText(txt, x, y);
+                }
+                document.getElementById('wm-preview').src = cvs.toDataURL();
+            }
+        });
+        function formatBytes(bytes) {
+            if(bytes===0) return '0 B';
+            const k=1024, sizes=['B','KB','MB','GB'];
+            const i=Math.floor(Math.log(bytes)/Math.log(k));
+            return parseFloat((bytes/Math.pow(k,i)).toFixed(2))+' '+sizes[i];
+        }
+    </script>
+</body>
+</html>
+
